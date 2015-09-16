@@ -45,6 +45,8 @@ class PointcutMatchingPass implements CompilerPassInterface
     private $pointcuts;
     private $cacheDir;
     private $container;
+    private $useCompilationCache;
+    private $compilationCache;
 
     /**
      * @param array<PointcutInterface> $pointcuts
@@ -58,6 +60,10 @@ class PointcutMatchingPass implements CompilerPassInterface
     {
         $this->container = $container;
         $this->cacheDir = $container->getParameter('jms_aop.cache_dir').'/proxies';
+        $this->useCompilationCache = $container->getParameter('jms_aop.use_compilation_cache');
+        if ($this->useCompilationCache) {
+            $this->compilationCache = $container->get('jms_aop.compilation_cache');
+        }
         $pointcuts = $this->getPointcuts();
 
         $interceptors = array();

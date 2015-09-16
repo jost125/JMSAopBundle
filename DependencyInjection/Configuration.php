@@ -38,6 +38,12 @@ class Configuration implements ConfigurationInterface
             ->children()
                 ->scalarNode('cache_dir')->cannotBeEmpty()->defaultValue('%kernel.cache_dir%/jms_aop')->end()
             ->end()
+            ->children()
+                 ->scalarNode('use_compilation_cache')->cannotBeEmpty()->defaultValue(false)->end()
+            ->end()
+            ->children()
+                 ->scalarNode('compilation_cache_provider_service')->end()
+            ->end()
         ;
 
         return $treeBuilder;

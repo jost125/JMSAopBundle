@@ -6,6 +6,7 @@
 
     <parameters>
         <parameter key="jms_aop.interceptor_loader.class">JMS\AopBundle\Aop\InterceptorLoader</parameter>
+        <parameter key="jms_aop.use_compilation_cache">false</parameter>
     </parameters>
 
     <services>
@@ -13,6 +14,11 @@
         
         <service id="jms_aop.interceptor_loader" class="%jms_aop.interceptor_loader.class%">
             <argument type="service" id="service_container" />
+        </service>
+
+        <service id="jms_aop.compilation_cache" class="JMS\AopBundle\DependencyInjection\CompilationCache">
+            <argument>%jms_aop.compilation_cache_provider_service%</argument>
+            <argument type="service" id="service_container"/>
         </service>
     </services>
 </container>
