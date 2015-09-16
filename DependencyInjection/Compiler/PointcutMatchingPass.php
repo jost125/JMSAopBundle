@@ -222,7 +222,7 @@ class PointcutMatchingPass implements CompilerPassInterface
 
     private function getPointcuts()
     {
-        if (null !== $this->pointcuts) {
+        if ($this->pointcuts !== null) {
             return $this->pointcuts;
         }
 
