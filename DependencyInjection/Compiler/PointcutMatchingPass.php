@@ -21,7 +21,9 @@ namespace JMS\AopBundle\DependencyInjection\Compiler;
 use CG\Core\ClassUtils;
 use CG\Core\DefaultNamingStrategy;
 use CG\Generator\RelativePath;
+use JMS\AopBundle\DependencyInjection\CompilationCache;
 use JMS\AopBundle\Exception\RuntimeException;
+use ReflectionClass;
 use Symfony\Component\Config\Resource\FileResource;
 use Symfony\Component\DependencyInjection\Reference;
 use CG\Proxy\Enhancer;
@@ -43,8 +45,16 @@ use CG\Core\ReflectionUtils;
 class PointcutMatchingPass implements CompilerPassInterface
 {
     private $pointcuts;
+    private $pointcutsHash;
     private $cacheDir;
     private $container;
+    private $useCompilationCache;
+    /** @var CompilationCache */
+    private $compilationCache;
+    /**
+     * @var DefaultNamingStrategy
+     */
+    private $namingStrategy;
 
     /**
      * @param array<PointcutInterface> $pointcuts
@@ -58,7 +68,13 @@ class PointcutMatchingPass implements CompilerPassInterface
     {
         $this->container = $container;
         $this->cacheDir = $container->getParameter('jms_aop.cache_dir').'/proxies';
+        $this->useCompilationCache = $container->getParameter('jms_aop.use_compilation_cache');
+        if ($this->useCompilationCache) {
+            $this->compilationCache = $container->get('jms_aop.compilation_cache');
+        }
         $pointcuts = $this->getPointcuts();
+        $this->pointcutsHash = md5(serialize($pointcuts));
+        $this->namingStrategy = new DefaultNamingStrategy('EnhancedProxy' . substr(md5($this->container->getParameter('jms_aop.cache_dir')), 0, 8));
 
         $interceptors = array();
         foreach ($container->getDefinitions() as $id => $definition) {
@@ -113,79 +129,152 @@ class PointcutMatchingPass implements CompilerPassInterface
         }
 
         $class = new \ReflectionClass($definition->getClass());
+        $classFile = $class->getFileName();
 
-        // check if class is matched
-        $matchingPointcuts = array();
-        foreach ($pointcuts as $interceptor => $pointcut) {
-            if ($pointcut->matchesClass($class)) {
-                $matchingPointcuts[$interceptor] = $pointcut;
-            }
-        }
-
-        if (empty($matchingPointcuts)) {
-            return;
-        }
-
-        $this->addResources($class, $this->container);
-
-        if ($class->isFinal()) {
-            return;
-        }
-
-        $classAdvices = array();
-        foreach (ReflectionUtils::getOverrideableMethods($class) as $method) {
-            if ('__construct' === $method->name) {
-                continue;
-            }
-
-            $advices = array();
-            foreach ($matchingPointcuts as $interceptor => $pointcut) {
-                if ($pointcut->matchesMethod($method)) {
-                    $advices[] = $interceptor;
+        if (!$this->useCompilationCache || $this->shouldRecompile($pointcuts, $class)) {
+            // check if class is matched
+            $matchingPointcuts = [];
+            foreach ($pointcuts as $interceptor => $pointcut) {
+                if ($pointcut->matchesClass($class)) {
+                    $matchingPointcuts[$interceptor] = $pointcut;
                 }
             }
 
-            if (empty($advices)) {
-                continue;
+            $match = !empty($matchingPointcuts);
+            $this->useCompilationCache && $this->compilationCache->savePointcutsMatch($this->pointcutsHash, $classFile, $match);
+            if (!$match) {
+                return;
             }
 
-            $classAdvices[$method->name] = $advices;
-            $className = ClassUtils::getUserClass($method->getDeclaringClass()->getName());
-            $interceptors[$className][$method->name] = $advices;
+            $this->addResources($class, $this->container);
 
-        }
-
-
-        if (empty($classAdvices)) {
-            return;
-        }
-
-
-        $proxyFilename = $this->cacheDir.'/'.str_replace('\\', '-', $class->name).'.php';
-
-        $generator = new InterceptionGenerator();
-        $generator->setFilter(function(\ReflectionMethod $method) use ($classAdvices) {
-            return isset($classAdvices[$method->name]);
-        });
-
-        if ($originalFilename) {
-            $relativeOriginalFilename = $this->relativizePath($proxyFilename, $originalFilename);
-            if ($relativeOriginalFilename[0] === '.') {
-                $generator->setRequiredFile(new RelativePath($relativeOriginalFilename));
-            } else {
-                $generator->setRequiredFile($relativeOriginalFilename);
+            if ($class->isFinal()) {
+                return;
             }
+
+            $classAdvices = [];
+            $classNameMethods = [];
+            foreach (ReflectionUtils::getOverrideableMethods($class) as $method) {
+                if ('__construct' === $method->name) {
+                    continue;
+                }
+
+                $advices = [];
+                foreach ($matchingPointcuts as $interceptor => $pointcut) {
+                    if ($pointcut->matchesMethod($method)) {
+                        $advices[] = $interceptor;
+                    }
+                }
+
+                if (empty($advices)) {
+                    continue;
+                }
+
+                $classAdvices[$method->name] = $advices;
+                $className = ClassUtils::getUserClass($method->getDeclaringClass()->getName());
+                $interceptors[$className][$method->name] = $advices;
+                $classNameMethods[$className][$method->name] = $advices;
+            }
+
+            $this->useCompilationCache && $this->compilationCache->saveClassAdvices(
+               $this->pointcutsHash,
+               $classFile,
+               $classAdvices
+            );
+
+            $this->useCompilationCache && $this->compilationCache->saveClassNameMethods(
+               $this->pointcutsHash,
+               $classFile,
+               $classNameMethods
+            );
+
+            if (empty($classAdvices)) {
+                return;
+            }
+
+            $proxyFilename = $this->getProxyFilename($class);
+
+            $generator = new InterceptionGenerator();
+            $generator->setFilter(function (\ReflectionMethod $method) use ($classAdvices) {
+                return isset($classAdvices[$method->name]);
+            });
+
+            if ($originalFilename) {
+                $relativeOriginalFilename = $this->relativizePath($proxyFilename, $originalFilename);
+                if ($relativeOriginalFilename[0] === '.') {
+                    $generator->setRequiredFile(new RelativePath($relativeOriginalFilename));
+                } else {
+                    $generator->setRequiredFile($relativeOriginalFilename);
+                }
+            }
+            $enhancer = new Enhancer($class, [], [
+               $generator
+            ]);
+            $enhancer->setNamingStrategy($this->namingStrategy);
+            $enhancer->writeClass($proxyFilename);
+            $definition->setFile($proxyFilename);
+            $definition->setClass($this->namingStrategy->getClassName($class));
+            $definition->addMethodCall('__CGInterception__setLoader', [
+               new Reference('jms_aop.interceptor_loader')
+            ]);
+        } else {
+            $match = $this->compilationCache->getPointcutsMatch($this->pointcutsHash, $classFile);
+            if (!$match) {
+                return;
+            }
+
+            $this->addResources($class, $this->container);
+
+            if ($class->isFinal()) {
+                return;
+            }
+
+            $classNameMethods = $this->compilationCache->getClassNameMethods($this->pointcutsHash, $classFile);
+            foreach ($classNameMethods as $className => $methodAdvices) {
+                foreach ($methodAdvices as $method => $advices) {
+                    $interceptors[$className][$method] = $advices;
+                }
+            }
+
+            $classAdvices = $this->compilationCache->getClassAdvices($this->pointcutsHash, $classFile);
+
+            if (empty($classAdvices)) {
+                return;
+            }
+
+            $proxyFilename = $this->getProxyFilename($class);
+            $proxyClassName = $this->namingStrategy->getClassName($class);
+            $classAdvicesHash = md5(serialize($classAdvices));
+
+            if (!file_exists($proxyFilename) || !$this->compilationCache->getProxyGenerated($proxyClassName, $classAdvicesHash)) {
+                $generator = new InterceptionGenerator();
+                $generator->setFilter(function (\ReflectionMethod $method) use ($classAdvices) {
+                    return isset($classAdvices[$method->name]);
+                });
+
+                if ($originalFilename) {
+                    $relativeOriginalFilename = $this->relativizePath($proxyFilename, $originalFilename);
+                    if ($relativeOriginalFilename[0] === '.') {
+                        $generator->setRequiredFile(new RelativePath($relativeOriginalFilename));
+                    } else {
+                        $generator->setRequiredFile($relativeOriginalFilename);
+                    }
+                }
+                $enhancer = new Enhancer($class, [], [
+                   $generator
+                ]);
+                $enhancer->setNamingStrategy($this->namingStrategy);
+                $enhancer->writeClass($proxyFilename);
+
+                $this->compilationCache->saveProxyGenerated($proxyClassName, $classAdvicesHash);
+            }
+
+            $definition->setFile($proxyFilename);
+            $definition->setClass($proxyClassName);
+            $definition->addMethodCall('__CGInterception__setLoader', [
+               new Reference('jms_aop.interceptor_loader')
+            ]);
         }
-        $enhancer = new Enhancer($class, array(), array(
-            $generator
-        ));
-        $enhancer->setNamingStrategy(new DefaultNamingStrategy('EnhancedProxy'.substr(md5($this->container->getParameter('jms_aop.cache_dir')), 0, 8)));
-        $enhancer->writeClass($proxyFilename);
-        $definition->setFile($proxyFilename);
-        $definition->setClass($enhancer->getClassName($class));
-        $definition->addMethodCall('__CGInterception__setLoader', array(
-            new Reference('jms_aop.interceptor_loader')
-        ));
     }
 
     private function relativizePath($targetPath, $path)
@@ -216,7 +305,7 @@ class PointcutMatchingPass implements CompilerPassInterface
 
     private function getPointcuts()
     {
-        if (null !== $this->pointcuts) {
+        if ($this->pointcuts !== null) {
             return $this->pointcuts;
         }
 
@@ -237,5 +326,23 @@ class PointcutMatchingPass implements CompilerPassInterface
         ;
 
         return $pointcuts;
+    }
+
+
+    private function shouldRecompile($pointcuts, ReflectionClass $class) {
+        if ($this->compilationCache->hasClassModified($class)) {
+            return true;
+        }
+        foreach ($pointcuts as $interceptor => $pointcut) {
+            if ($this->compilationCache->hasClassModified(new ReflectionClass($pointcut))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function getProxyFilename(ReflectionClass $class) {
+        return $this->cacheDir . '/' . str_replace('\\', '-', $class->name) . '.php';
     }
 }
