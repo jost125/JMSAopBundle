@@ -39,10 +39,10 @@ class Configuration implements ConfigurationInterface
                 ->scalarNode('cache_dir')->cannotBeEmpty()->defaultValue('%kernel.cache_dir%/jms_aop')->end()
             ->end()
             ->children()
-                 ->scalarNode('use_compilation_cache')->cannotBeEmpty()->defaultValue(false)->end()
+                 ->scalarNode('use_compilation_cache')->defaultValue(false)->end()
             ->end()
             ->children()
-                 ->scalarNode('compilation_cache_provider_service')->end()
+                 ->scalarNode('compilation_cache_provider_service')->defaultValue(false)->end()
             ->end()
         ;
 

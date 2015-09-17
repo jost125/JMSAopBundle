@@ -52,12 +52,10 @@ class JMSAopExtension extends Extension
         }
         $container->setParameter('jms_aop.cache_dir', $cacheDir);
         $container->setParameter('jms_aop.use_compilation_cache', $useCompilationCache);
-        if ($useCompilationCache) {
-            $container->setParameter(
-               'jms_aop.compilation_cache_provider_service',
-               $container->getParameterBag()->resolveValue($config['compilation_cache_provider_service'])
-            );
-        }
+        $container->setParameter(
+           'jms_aop.compilation_cache_provider_service',
+           $container->getParameterBag()->resolveValue($config['compilation_cache_provider_service'])
+        );
     }
 
 

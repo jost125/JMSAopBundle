@@ -10,7 +10,7 @@ class CompilationCache {
 	private $cache;
 
 	public function __construct($cacheServiceId, ContainerInterface $containerInterface) {
-		$this->cache = $containerInterface->get($cacheServiceId);
+		$this->cache = $cacheServiceId ? $containerInterface->get($cacheServiceId) : null;
 	}
 
 	public function hasClassModified(ReflectionClass $class) {
