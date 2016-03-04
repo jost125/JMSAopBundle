@@ -71,6 +71,7 @@ class PointcutMatchingPass implements CompilerPassInterface
         $this->useCompilationCache = $container->getParameter('jms_aop.use_compilation_cache');
         if ($this->useCompilationCache) {
             $this->compilationCache = $container->get('jms_aop.compilation_cache');
+            $this->compilationCache->load();
         }
         $pointcuts = $this->getPointcuts();
         $this->pointcutsHash = md5(serialize($pointcuts));

@@ -8,9 +8,25 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 class CompilationCache {
 
 	private $cache;
+	private $unitOfWork;
+	private $loaded;
 
 	public function __construct($cacheServiceId, ContainerInterface $containerInterface) {
 		$this->cache = $cacheServiceId ? $containerInterface->get($cacheServiceId) : null;
+		$this->unitOfWork = [];
+		$this->loaded = false;
+	}
+
+	public function __destruct() {
+		$this->flush();
+	}
+
+	public function load() {
+		if (!$this->loaded) {
+			$fetched = $this->cache->fetch('aop_compilation');
+			$this->unitOfWork = is_array($fetched) ? $fetched : [];
+			$this->loaded = true;
+		}
 	}
 
 	public function hasClassModified(ReflectionClass $class) {
@@ -56,11 +72,18 @@ class CompilationCache {
 	}
 
 	private function fetch($prefix, $key) {
-		return $this->cache->fetch($prefix . "|" . $key);
+		return isset($this->unitOfWork[$prefix][$key]) ? $this->unitOfWork[$prefix][$key] : null;
 	}
 
 	private function save($prefix, $key, $value) {
-		$this->cache->save($prefix . "|" . $key, $value);
+		if (!isset($this->unitOfWork[$prefix])) {
+			$this->unitOfWork[$prefix] = [$key => $value];
+		}
+		$this->unitOfWork[$prefix][$key] = $value;
+	}
+
+	public function flush() {
+		$this->cache->save('aop_compilation', $this->unitOfWork);
 	}
 
 }
