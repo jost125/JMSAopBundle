@@ -48,11 +48,11 @@ class CompilationCache {
 	}
 
 	public function saveProxyGenerated($proxyClassName, $classAdvicesHash) {
-		$this->save("class_name_methods", $proxyClassName . $classAdvicesHash, true);
+		$this->save("proxy_generated", $proxyClassName . $classAdvicesHash, true);
 	}
 
 	public function getProxyGenerated($proxyClassName, $classAdvicesHash) {
-		return $this->fetch("class_name_methods", $proxyClassName . $classAdvicesHash);
+		return $this->fetch("proxy_generated", $proxyClassName . $classAdvicesHash);
 	}
 
 	private function fetch($prefix, $key) {
