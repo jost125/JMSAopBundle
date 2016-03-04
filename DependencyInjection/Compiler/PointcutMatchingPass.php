@@ -31,7 +31,6 @@ use CG\Proxy\InterceptionGenerator;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
-use JMS\AopBundle\Aop\PointcutInterface;
 use CG\Core\ReflectionUtils;
 
 /**
@@ -51,14 +50,9 @@ class PointcutMatchingPass implements CompilerPassInterface
     private $useCompilationCache;
     /** @var CompilationCache */
     private $compilationCache;
-    /**
-     * @var DefaultNamingStrategy
-     */
+    /** @var DefaultNamingStrategy */
     private $namingStrategy;
 
-    /**
-     * @param array<PointcutInterface> $pointcuts
-     */
     public function __construct(array $pointcuts = null)
     {
         $this->pointcuts = $pointcuts;
@@ -92,10 +86,6 @@ class PointcutMatchingPass implements CompilerPassInterface
         ;
     }
 
-    /**
-     * @param array<PointcutInterface> $pointcuts
-     * @param array<string,string> $interceptors
-     */
     private function processInlineDefinitions($pointcuts, &$interceptors, array $a)
     {
         foreach ($a as $k => $v) {
@@ -107,10 +97,6 @@ class PointcutMatchingPass implements CompilerPassInterface
         }
     }
 
-    /**
-     * @param array<PointcutInterface> $pointcuts
-     * @param array<string,string> $interceptors
-     */
     private function processDefinition(Definition $definition, $pointcuts, &$interceptors)
     {
         if ($definition->isSynthetic()) {
@@ -133,7 +119,6 @@ class PointcutMatchingPass implements CompilerPassInterface
         $classFile = $class->getFileName();
 
         if (!$this->useCompilationCache || $this->shouldRecompile($pointcuts, $class)) {
-            // check if class is matched
             $matchingPointcuts = [];
             foreach ($pointcuts as $interceptor => $pointcut) {
                 if ($pointcut->matchesClass($class)) {
