@@ -44,6 +44,7 @@ use Symfony\Component\DependencyInjection\Reference;
 class PointcutMatchingPass implements CompilerPassInterface
 {
     private $pointcuts;
+    private $pointcutChanged;
     private $pointcutsHash;
     private $cacheDir;
     private $container;
@@ -56,6 +57,7 @@ class PointcutMatchingPass implements CompilerPassInterface
     public function __construct(array $pointcuts = null)
     {
         $this->pointcuts = $pointcuts;
+        $this->pointcutChanged = null;
     }
 
     public function process(ContainerBuilder $container)
@@ -316,17 +318,26 @@ class PointcutMatchingPass implements CompilerPassInterface
         if ($this->compilationCache->hasClassModified($class)) {
             return true;
         }
-        foreach ($this->getPointcuts() as $interceptor => $pointcut) {
-            if ($this->compilationCache->hasClassModified(new ReflectionClass($pointcut))) {
-                return true;
-            }
-        }
 
-        return false;
+        return $this->hasPointcutChanged();
     }
 
     private function getProxyFilename(ReflectionClass $class) {
         return $this->cacheDir . '/' . str_replace('\\', '-', $class->name) . '.php';
+    }
+
+    private function hasPointcutChanged() {
+        if ($this->pointcutChanged === null) {
+            foreach ($this->getPointcuts() as $pointcut) {
+                if ($this->compilationCache->hasClassModified(new ReflectionClass($pointcut))) {
+                    return $this->pointcutChanged = true;
+                }
+            }
+
+            return $this->pointcutChanged = false;
+        }
+
+        return $this->pointcutChanged;
     }
 
     private function getPointcutsHash() {
