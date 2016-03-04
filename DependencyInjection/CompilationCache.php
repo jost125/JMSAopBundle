@@ -32,19 +32,19 @@ class CompilationCache {
 	}
 
 	public function saveClassAdvices($pointcutsHash, $classFile, array $classAdvices) {
-		$this->save("class_advices", $pointcutsHash . $classFile, serialize($classAdvices));
+		$this->save("class_advices", $pointcutsHash . $classFile, $classAdvices);
 	}
 
 	public function getClassAdvices($pointcutsHash, $classFile) {
-		return unserialize($this->fetch("class_advices", $pointcutsHash . $classFile));
+		return $this->fetch("class_advices", $pointcutsHash . $classFile);
 	}
 
 	public function saveClassNameMethods($pointcutsHash, $classFile, array $classNameMethods) {
-		$this->save("class_name_methods", $pointcutsHash . $classFile, serialize($classNameMethods));
+		$this->save("class_name_methods", $pointcutsHash . $classFile, $classNameMethods);
 	}
 
 	public function getClassNameMethods($pointcutsHash, $classFile) {
-		return unserialize($this->fetch("class_name_methods", $pointcutsHash . $classFile));
+		return $this->fetch("class_name_methods", $pointcutsHash . $classFile);
 	}
 
 	public function saveProxyGenerated($proxyClassName, $classAdvicesHash) {
