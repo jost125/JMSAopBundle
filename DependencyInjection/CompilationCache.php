@@ -8,9 +8,25 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 class CompilationCache {
 
 	private $cache;
+	private $unitOfWork;
+	private $loaded;
 
 	public function __construct($cacheServiceId, ContainerInterface $containerInterface) {
 		$this->cache = $cacheServiceId ? $containerInterface->get($cacheServiceId) : null;
+		$this->unitOfWork = [];
+		$this->loaded = false;
+	}
+
+	public function __destruct() {
+		$this->flush();
+	}
+
+	public function load() {
+		if (!$this->loaded) {
+			$fetched = $this->cache->fetch('aop_compilation');
+			$this->unitOfWork = is_array($fetched) ? $fetched : [];
+			$this->loaded = true;
+		}
 	}
 
 	public function hasClassModified(ReflectionClass $class) {
@@ -32,35 +48,42 @@ class CompilationCache {
 	}
 
 	public function saveClassAdvices($pointcutsHash, $classFile, array $classAdvices) {
-		$this->save("class_advices", $pointcutsHash . $classFile, serialize($classAdvices));
+		$this->save("class_advices", $pointcutsHash . $classFile, $classAdvices);
 	}
 
 	public function getClassAdvices($pointcutsHash, $classFile) {
-		return unserialize($this->fetch("class_advices", $pointcutsHash . $classFile));
+		return $this->fetch("class_advices", $pointcutsHash . $classFile);
 	}
 
 	public function saveClassNameMethods($pointcutsHash, $classFile, array $classNameMethods) {
-		$this->save("class_name_methods", $pointcutsHash . $classFile, serialize($classNameMethods));
+		$this->save("class_name_methods", $pointcutsHash . $classFile, $classNameMethods);
 	}
 
 	public function getClassNameMethods($pointcutsHash, $classFile) {
-		return unserialize($this->fetch("class_name_methods", $pointcutsHash . $classFile));
+		return $this->fetch("class_name_methods", $pointcutsHash . $classFile);
 	}
 
 	public function saveProxyGenerated($proxyClassName, $classAdvicesHash) {
-		$this->save("class_name_methods", $proxyClassName . $classAdvicesHash, true);
+		$this->save("proxy_generated", $proxyClassName . $classAdvicesHash, true);
 	}
 
 	public function getProxyGenerated($proxyClassName, $classAdvicesHash) {
-		return $this->fetch("class_name_methods", $proxyClassName . $classAdvicesHash);
+		return $this->fetch("proxy_generated", $proxyClassName . $classAdvicesHash);
 	}
 
 	private function fetch($prefix, $key) {
-		return $this->cache->fetch($prefix . "|" . $key);
+		return isset($this->unitOfWork[$prefix][$key]) ? $this->unitOfWork[$prefix][$key] : null;
 	}
 
 	private function save($prefix, $key, $value) {
-		$this->cache->save($prefix . "|" . $key, $value);
+		if (!isset($this->unitOfWork[$prefix])) {
+			$this->unitOfWork[$prefix] = [$key => $value];
+		}
+		$this->unitOfWork[$prefix][$key] = $value;
+	}
+
+	public function flush() {
+		$this->cache->save('aop_compilation', $this->unitOfWork);
 	}
 
 }
