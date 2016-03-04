@@ -20,18 +20,18 @@ namespace JMS\AopBundle\DependencyInjection\Compiler;
 
 use CG\Core\ClassUtils;
 use CG\Core\DefaultNamingStrategy;
+use CG\Core\ReflectionUtils;
 use CG\Generator\RelativePath;
+use CG\Proxy\Enhancer;
+use CG\Proxy\InterceptionGenerator;
 use JMS\AopBundle\DependencyInjection\CompilationCache;
 use JMS\AopBundle\Exception\RuntimeException;
 use ReflectionClass;
 use Symfony\Component\Config\Resource\FileResource;
-use Symfony\Component\DependencyInjection\Reference;
-use CG\Proxy\Enhancer;
-use CG\Proxy\InterceptionGenerator;
-use Symfony\Component\DependencyInjection\Definition;
-use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
-use CG\Core\ReflectionUtils;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\Reference;
 
 /**
  * Matches pointcuts against service methods.
