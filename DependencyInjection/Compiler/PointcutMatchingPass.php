@@ -67,17 +67,15 @@ class PointcutMatchingPass implements CompilerPassInterface
             $this->compilationCache = $container->get('jms_aop.compilation_cache');
             $this->compilationCache->load();
         }
-        $pointcuts = $this->getPointcuts();
-        $this->pointcutsHash = md5(serialize($pointcuts));
         $this->namingStrategy = new DefaultNamingStrategy('EnhancedProxy' . substr(md5($this->container->getParameter('jms_aop.cache_dir')), 0, 8));
 
         $interceptors = array();
         foreach ($container->getDefinitions() as $id => $definition) {
-            $this->processDefinition($definition, $pointcuts, $interceptors);
+            $this->processDefinition($definition, $interceptors);
 
-            $this->processInlineDefinitions($pointcuts, $interceptors, $definition->getArguments());
-            $this->processInlineDefinitions($pointcuts, $interceptors, $definition->getMethodCalls());
-            $this->processInlineDefinitions($pointcuts, $interceptors, $definition->getProperties());
+            $this->processInlineDefinitions($interceptors, $definition->getArguments());
+            $this->processInlineDefinitions($interceptors, $definition->getMethodCalls());
+            $this->processInlineDefinitions($interceptors, $definition->getProperties());
         }
 
         $container
@@ -86,18 +84,18 @@ class PointcutMatchingPass implements CompilerPassInterface
         ;
     }
 
-    private function processInlineDefinitions($pointcuts, &$interceptors, array $a)
+    private function processInlineDefinitions(&$interceptors, array $a)
     {
         foreach ($a as $k => $v) {
             if ($v instanceof Definition) {
-                $this->processDefinition($v, $pointcuts, $interceptors);
+                $this->processDefinition($v, $interceptors);
             } elseif (is_array($v)) {
-                $this->processInlineDefinitions($pointcuts, $interceptors, $v);
+                $this->processInlineDefinitions($interceptors, $v);
             }
         }
     }
 
-    private function processDefinition(Definition $definition, $pointcuts, &$interceptors)
+    private function processDefinition(Definition $definition, &$interceptors)
     {
         if ($definition->isSynthetic()) {
             return;
@@ -118,16 +116,16 @@ class PointcutMatchingPass implements CompilerPassInterface
         $class = new \ReflectionClass($definition->getClass());
         $classFile = $class->getFileName();
 
-        if (!$this->useCompilationCache || $this->shouldRecompile($pointcuts, $class)) {
+        if (!$this->useCompilationCache || $this->shouldRecompile($class)) {
             $matchingPointcuts = [];
-            foreach ($pointcuts as $interceptor => $pointcut) {
+            foreach ($this->getPointcuts() as $interceptor => $pointcut) {
                 if ($pointcut->matchesClass($class)) {
                     $matchingPointcuts[$interceptor] = $pointcut;
                 }
             }
 
             $match = !empty($matchingPointcuts);
-            $this->useCompilationCache && $this->compilationCache->savePointcutsMatch($this->pointcutsHash, $classFile, $match);
+            $this->useCompilationCache && $this->compilationCache->savePointcutsMatch($this->getPointcutsHash(), $classFile, $match);
             if (!$match) {
                 return;
             }
@@ -163,13 +161,13 @@ class PointcutMatchingPass implements CompilerPassInterface
             }
 
             $this->useCompilationCache && $this->compilationCache->saveClassAdvices(
-               $this->pointcutsHash,
+               $this->getPointcutsHash(),
                $classFile,
                $classAdvices
             );
 
             $this->useCompilationCache && $this->compilationCache->saveClassNameMethods(
-               $this->pointcutsHash,
+               $this->getPointcutsHash(),
                $classFile,
                $classNameMethods
             );
@@ -204,7 +202,7 @@ class PointcutMatchingPass implements CompilerPassInterface
                new Reference('jms_aop.interceptor_loader')
             ]);
         } else {
-            $match = $this->compilationCache->getPointcutsMatch($this->pointcutsHash, $classFile);
+            $match = $this->compilationCache->getPointcutsMatch($this->getPointcutsHash(), $classFile);
             if (!$match) {
                 return;
             }
@@ -215,14 +213,14 @@ class PointcutMatchingPass implements CompilerPassInterface
                 return;
             }
 
-            $classNameMethods = $this->compilationCache->getClassNameMethods($this->pointcutsHash, $classFile);
+            $classNameMethods = $this->compilationCache->getClassNameMethods($this->getPointcutsHash(), $classFile);
             foreach ($classNameMethods as $className => $methodAdvices) {
                 foreach ($methodAdvices as $method => $advices) {
                     $interceptors[$className][$method] = $advices;
                 }
             }
 
-            $classAdvices = $this->compilationCache->getClassAdvices($this->pointcutsHash, $classFile);
+            $classAdvices = $this->compilationCache->getClassAdvices($this->getPointcutsHash(), $classFile);
 
             if (empty($classAdvices)) {
                 return;
@@ -311,15 +309,14 @@ class PointcutMatchingPass implements CompilerPassInterface
             ->addArgument($pointcutReferences)
         ;
 
-        return $pointcuts;
+        return $this->pointcuts = $pointcuts;
     }
 
-
-    private function shouldRecompile($pointcuts, ReflectionClass $class) {
+    private function shouldRecompile(ReflectionClass $class) {
         if ($this->compilationCache->hasClassModified($class)) {
             return true;
         }
-        foreach ($pointcuts as $interceptor => $pointcut) {
+        foreach ($this->getPointcuts() as $interceptor => $pointcut) {
             if ($this->compilationCache->hasClassModified(new ReflectionClass($pointcut))) {
                 return true;
             }
@@ -330,5 +327,15 @@ class PointcutMatchingPass implements CompilerPassInterface
 
     private function getProxyFilename(ReflectionClass $class) {
         return $this->cacheDir . '/' . str_replace('\\', '-', $class->name) . '.php';
+    }
+
+    private function getPointcutsHash() {
+        if ($this->pointcutsHash === null) {
+            $this->pointcutsHash = md5(join(':', array_map(function ($pointcut) {
+                return get_class($pointcut);
+            }, $this->getPointcuts())));
+        }
+
+        return $this->pointcutsHash;
     }
 }
