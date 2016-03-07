@@ -83,7 +83,9 @@ class CompilationCache {
 	}
 
 	public function flush() {
-		$this->cache->save('aop_compilation', $this->unitOfWork);
+		if ($this->cache) {
+			$this->cache->save('aop_compilation', $this->unitOfWork);
+		}
 	}
 
 }
